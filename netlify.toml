@@ -1,11 +1,8 @@
 [build]
-  command = "npm install --ignore-scripts --no-audit --no-fund && npm run netlify-build"
   publish = "dist/public"
 
 [build.environment]
   NODE_VERSION = "18"
-  NODE_OPTIONS = "--max-old-space-size=4096"
-  NPM_CONFIG_PRODUCTION = "false"
 
 # SPA redirect — ensures React Router client-side routes work on Netlify
 [[redirects]]
