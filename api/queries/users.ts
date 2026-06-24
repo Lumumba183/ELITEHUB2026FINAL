@@ -8,7 +8,7 @@ export async function findUserByUnionId(unionId: string) {
   const rows = await getDb()
     .select()
     .from(schema.users)
-    .where(eq(schema.users.unionId, unionId))
+    .where(eq(schema.users.oauthId, unionId))
     .limit(1);
   return rows.at(0);
 }
@@ -16,14 +16,13 @@ export async function findUserByUnionId(unionId: string) {
 export async function upsertUser(data: InsertUser) {
   const values = { ...data };
   const updateSet: Partial<InsertUser> = {
-    lastSignInAt: new Date(),
     ...data,
   };
 
   if (
     values.role === undefined &&
-    values.unionId &&
-    values.unionId === env.ownerUnionId
+    values.oauthId &&
+    values.oauthId === env.ownerUnionId
   ) {
     values.role = "admin";
     updateSet.role = "admin";
