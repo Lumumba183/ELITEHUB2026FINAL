@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { LogIn, UserCircle, Heart, ArrowRight, ArrowLeft } from "lucide-react";
+import { LogIn, UserCircle, Heart, ArrowRight, ArrowLeft, User, Briefcase, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { trpc } from "@/providers/trpc";
+import { setMockUser } from "@/hooks/useAuth";
+import type { UserRole } from "@/hooks/useAuth";
 
 function getOAuthUrl() {
-  const authUrl = new URL(
-    `${import.meta.env.VITE_KIMI_AUTH_URL}/api/oauth/authorize`
-  );
-  authUrl.searchParams.set("client_id", import.meta.env.VITE_APP_ID);
+  const authBase = import.meta.env.VITE_KIMI_AUTH_URL;
+  const clientId = import.meta.env.VITE_APP_ID;
+  if (!authBase || !clientId) return "#";
+  const authUrl = new URL(`${authBase}/api/oauth/authorize`);
+  authUrl.searchParams.set("client_id", clientId);
   authUrl.searchParams.set("redirect_uri", `${window.location.origin}/api/oauth/callback`);
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", "profile");
@@ -21,20 +23,21 @@ export default function Register() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [selectedRole, setSelectedRole] = useState<"companion" | "client" | null>(null);
+  const [demoLoading, setDemoLoading] = useState<UserRole | null>(null);
 
-  const updateRole = trpc.user.updateRole.useMutation({
-    onSuccess: () => {
+  const handleDemoLogin = (role: UserRole) => {
+    setDemoLoading(role);
+    setMockUser(role);
+    setTimeout(() => {
       navigate("/dashboard");
-    },
-  });
-
-  const handleRoleSelect = (role: "companion" | "client") => {
-    setSelectedRole(role);
+    }, 300);
   };
 
   const handleContinue = () => {
     if (selectedRole) {
-      updateRole.mutate({ role: selectedRole });
+      // On static site, skip tRPC and go straight to dashboard with mock user
+      setMockUser(selectedRole);
+      navigate("/dashboard");
     }
   };
 
@@ -81,6 +84,44 @@ export default function Register() {
                 <div className="flex-1 h-px bg-white/10" />
               </div>
 
+              {/* Demo Login Buttons */}
+              <div className="space-y-3 mb-6">
+                <p className="text-xs text-[#9CA3AF] text-center uppercase tracking-wider">Quick Start — No Account Needed</p>
+                <Button
+                  variant="outline"
+                  className="w-full border-white/10 text-[#F5E6D3] hover:bg-white/5 rounded-full py-5"
+                  onClick={() => handleDemoLogin("client")}
+                  disabled={!!demoLoading}
+                >
+                  <User className="w-4 h-4 mr-2" />
+                  {demoLoading === "client" ? "Signing in..." : "Try as Client Demo"}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full border-[#E11D48]/30 text-[#F5E6D3] hover:bg-[#E11D48]/10 rounded-full py-5"
+                  onClick={() => handleDemoLogin("companion")}
+                  disabled={!!demoLoading}
+                >
+                  <Briefcase className="w-4 h-4 mr-2" />
+                  {demoLoading === "companion" ? "Signing in..." : "Try as Companion Demo"}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full border-amber-500/30 text-[#F5E6D3] hover:bg-amber-500/10 rounded-full py-5"
+                  onClick={() => handleDemoLogin("admin")}
+                  disabled={!!demoLoading}
+                >
+                  <Crown className="w-4 h-4 mr-2" />
+                  {demoLoading === "admin" ? "Signing in..." : "Try as Admin Demo"}
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-4 mb-6">
+                <div className="flex-1 h-px bg-white/10" />
+                <span className="text-xs text-[#9CA3AF] uppercase tracking-wider">or</span>
+                <div className="flex-1 h-px bg-white/10" />
+              </div>
+
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm text-[#9CA3AF] mb-2">Email</label>
@@ -119,7 +160,7 @@ export default function Register() {
               <div className="grid gap-4 mb-6">
                 {/* Companion Option */}
                 <button
-                  onClick={() => handleRoleSelect("companion")}
+                  onClick={() => setSelectedRole("companion")}
                   className={`p-6 rounded-xl border transition-all text-left ${
                     selectedRole === "companion"
                       ? "border-[#E11D48]/50 bg-[#E11D48]/5 glow-crimson"
@@ -145,7 +186,7 @@ export default function Register() {
 
                 {/* Client Option */}
                 <button
-                  onClick={() => handleRoleSelect("client")}
+                  onClick={() => setSelectedRole("client")}
                   className={`p-6 rounded-xl border transition-all text-left ${
                     selectedRole === "client"
                       ? "border-[#E11D48]/50 bg-[#E11D48]/5 glow-crimson"
@@ -180,10 +221,10 @@ export default function Register() {
                 </Button>
                 <Button
                   onClick={handleContinue}
-                  disabled={!selectedRole || updateRole.isPending}
+                  disabled={!selectedRole}
                   className="flex-[2] gradient-crimson text-white border-0 hover:opacity-90 rounded-full py-6 text-base font-semibold disabled:opacity-50"
                 >
-                  {updateRole.isPending ? "Setting up..." : "Get Started"}
+                  Get Started
                 </Button>
               </div>
             </>

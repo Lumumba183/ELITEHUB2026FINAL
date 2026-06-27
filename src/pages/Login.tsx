@@ -7,10 +7,11 @@ import { setMockUser } from "@/hooks/useAuth";
 import type { UserRole } from "@/hooks/useAuth";
 
 function getOAuthUrl() {
-  const authUrl = new URL(
-    `${import.meta.env.VITE_KIMI_AUTH_URL}/api/oauth/authorize`
-  );
-  authUrl.searchParams.set("client_id", import.meta.env.VITE_APP_ID);
+  const authBase = import.meta.env.VITE_KIMI_AUTH_URL;
+  const clientId = import.meta.env.VITE_APP_ID;
+  if (!authBase || !clientId) return "#";
+  const authUrl = new URL(`${authBase}/api/oauth/authorize`);
+  authUrl.searchParams.set("client_id", clientId);
   authUrl.searchParams.set("redirect_uri", `${window.location.origin}/api/oauth/callback`);
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", "profile");
