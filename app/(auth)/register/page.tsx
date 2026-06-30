@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import { SignUp } from "@clerk/nextjs";
+
+export const metadata: Metadata = {
+  title: "Register",
+  description: "Create your ELITEHUB account. Join Kenya's premier companion marketplace.",
+};
 
 export default function RegisterPage() {
   return (

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -8,6 +9,32 @@ export const dynamic = 'force-dynamic';
 
 interface BlogPageProps {
   params: { slug: string };
+}
+
+export async function generateMetadata({ params }: BlogPageProps): Promise<Metadata> {
+  const supabase = await createClient();
+  const { data: post } = await supabase
+    .from("blog_posts")
+    .select("title, excerpt, cover_image")
+    .eq("slug", params.slug)
+    .eq("status", "published")
+    .single();
+
+  if (!post) {
+    return {
+      title: "Post Not Found",
+    };
+  }
+
+  return {
+    title: post.title,
+    description: post.excerpt || `Read ${post.title} on ELITEHUB Blog`,
+    openGraph: {
+      title: post.title,
+      description: post.excerpt,
+      images: post.cover_image ? [post.cover_image] : undefined,
+    },
+  };
 }
 
 export default async function BlogPostPage({ params }: BlogPageProps) {

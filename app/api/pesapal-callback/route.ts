@@ -1,15 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { pesapalCallbackSchema } from "@/lib/validation";
 
 export async function POST(req: NextRequest) {
   try {
-    const data = await req.json();
+    const body = await req.json();
+    
+    // Validate input
+    const validationResult = pesapalCallbackSchema.safeParse(body);
+    if (!validationResult.success) {
+      return NextResponse.json(
+        { error: "Invalid payload", details: validationResult.error.format() },
+        { status: 400 }
+      );
+    }
+    
+    const data = validationResult.data;
     const supabase = createAdminClient();
 
     // PesaPal callback data structure
-    const orderTrackingId = data.orderTrackingId || data.OrderTrackingId;
-    const merchantReference = data.merchantReference || data.MerchantReference;
-    const status = data.status || data.Status;
+    const orderTrackingId = data.orderTrackingId;
+    const merchantReference = data.merchantReference;
+    const status = data.status;
 
     if (!orderTrackingId) {
       return NextResponse.json({ error: "Missing order tracking ID" }, { status: 400 });

@@ -1,4 +1,4 @@
-const PESAPAL_API_URL = process.env.PESAPAL_API_URL || "https://cybqa.pesapal.com/pesapalv3";
+const PESAPAL_API_URL = process.env.PESAPAL_API_URL || "https://pay.pesapal.com/v3";
 
 interface AuthResponse {
   token: string;

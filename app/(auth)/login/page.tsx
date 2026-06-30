@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import { SignIn } from "@clerk/nextjs";
+
+export const metadata: Metadata = {
+  title: "Login",
+  description: "Sign in to your ELITEHUB account. Access your dashboard, messages, and wallet.",
+};
 
 export default function LoginPage() {
   return (

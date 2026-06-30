@@ -1,7 +1,13 @@
+import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowRight, Clock, User } from "lucide-react";
+
+export const metadata: Metadata = {
+  title: "Blog",
+  description: "Insights, stories, and updates from the world of premium companionship.",
+};
 
 export const dynamic = 'force-dynamic';
 

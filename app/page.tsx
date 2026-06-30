@@ -1,6 +1,17 @@
+import type { Metadata } from "next";
 import { Star, Heart, Shield, Zap, Crown, Gem, ArrowRight, Users, MessageCircle, CreditCard, Lock, Globe } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+
+export const metadata: Metadata = {
+  title: "ELITEHUB — Premium Companion Marketplace",
+  description: "Kenya's premier companion marketplace. Connect with verified elite companions for unforgettable experiences. Secure payments, real-time chat, and premium content.",
+  openGraph: {
+    title: "ELITEHUB — Premium Companion Marketplace",
+    description: "Connect with exceptional companions for unforgettable experiences.",
+    images: ["/assets/og-image.jpg"],
+  },
+};
 
 export default function HomePage() {
   return (
