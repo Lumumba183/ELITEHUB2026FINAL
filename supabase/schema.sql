@@ -74,7 +74,44 @@ INSERT INTO platform_settings (key, value, description) VALUES
 ('featured_companion_price', '5000', 'Monthly featured placement in KES');
 
 -- ───────────────────────────────────────────────────────────────────────────
--- 3. SUBSCRIPTIONS
+-- 2b. GIFT ITEMS (Admin-configurable gift menu)
+-- ───────────────────────────────────────────────────────────────────────────
+CREATE TABLE gift_items (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  icon TEXT NOT NULL,
+  coin_cost INTEGER NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  is_active BOOLEAN DEFAULT TRUE,
+  category TEXT DEFAULT 'standard' CHECK (category IN ('standard', 'premium', 'luxury')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE gift_items ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Anyone can read active gift items" ON gift_items
+  FOR SELECT USING (is_active = TRUE);
+
+CREATE POLICY "Admins can manage gift items" ON gift_items
+  FOR ALL USING (EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.uid()::text AND role = 'admin'));
+
+-- Insert default gifts matching client suggestion
+INSERT INTO gift_items (name, icon, coin_cost, sort_order, category) VALUES
+  ('Rose', '🌹', 10, 1, 'standard'),
+  ('Coffee', '☕', 20, 2, 'standard'),
+  ('Chocolate Box', '🍫', 35, 3, 'standard'),
+  ('Lipstick', '💄', 50, 4, 'standard'),
+  ('Champagne', '🥂', 75, 5, 'premium'),
+  ('Designer Bag', '👜', 150, 6, 'premium'),
+  ('Ring', '💍', 300, 7, 'luxury'),
+  ('Luxury Watch', '⌚', 500, 8, 'luxury'),
+  ('Dream Vacation', '✈️', 1000, 9, 'luxury'),
+  ('Elite Crown', '👑', 2000, 10, 'luxury'),
+  ('Diamond', '💎', 5000, 11, 'luxury');
+
+CREATE TRIGGER update_gift_items_updated_at BEFORE UPDATE ON gift_items
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- ───────────────────────────────────────────────────────────────────────────
 CREATE TABLE subscriptions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -265,6 +302,121 @@ CREATE POLICY "Admins can manage all gifts" ON gifts
   FOR ALL USING (EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.uid()::text AND role = 'admin'));
 
 -- ───────────────────────────────────────────────────────────────────────────
+-- 6b. MESSAGES — Add gift support columns
+-- ───────────────────────────────────────────────────────────────────────────
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS gift_transaction_id UUID REFERENCES gift_transactions(id) ON DELETE SET NULL;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS message_type TEXT DEFAULT 'text' CHECK (message_type IN ('text', 'gift', 'image', 'system'));
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- 9b. GIFT TRANSACTIONS (Complete audit trail for gifting system)
+-- ───────────────────────────────────────────────────────────────────────────
+CREATE TABLE gift_transactions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  receiver_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  gift_item_id UUID REFERENCES gift_items(id),
+  coin_cost INTEGER NOT NULL,
+  companion_share DECIMAL(12,2) NOT NULL,
+  platform_share DECIMAL(12,2) NOT NULL,
+  split_percent INTEGER NOT NULL DEFAULT 50,
+  message_id UUID REFERENCES messages(id) ON DELETE SET NULL,
+  personal_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE gift_transactions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can read gift transactions they sent" ON gift_transactions
+  FOR SELECT USING (sender_id = (SELECT id FROM users WHERE clerk_id = auth.uid()::text));
+
+CREATE POLICY "Users can read gift transactions they received" ON gift_transactions
+  FOR SELECT USING (receiver_id = (SELECT id FROM users WHERE clerk_id = auth.uid()::text));
+
+CREATE POLICY "Admins can manage all gift transactions" ON gift_transactions
+  FOR ALL USING (EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.uid()::text AND role = 'admin'));
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- ATOMIC GIFT SEND FUNCTION
+-- ───────────────────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION send_gift(
+  p_sender_id UUID,
+  p_receiver_id UUID,
+  p_conversation_id UUID,
+  p_gift_item_id UUID,
+  p_coin_cost INTEGER,
+  p_split_percent INTEGER,
+  p_personal_message TEXT DEFAULT NULL
+)
+RETURNS JSONB AS $$
+DECLARE
+  v_client_coins INTEGER;
+  v_companion_share DECIMAL(12,2);
+  v_platform_share DECIMAL(12,2);
+  v_gift_tx_id UUID;
+  v_message_id UUID;
+BEGIN
+  -- Lock sender row and check balance
+  SELECT coins INTO v_client_coins
+  FROM users WHERE id = p_sender_id
+  FOR UPDATE;
+
+  IF v_client_coins < p_coin_cost THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Insufficient coins');
+  END IF;
+
+  -- Calculate split
+  v_companion_share := (p_coin_cost * p_split_percent) / 100.0;
+  v_platform_share := p_coin_cost - v_companion_share;
+
+  -- Deduct from sender
+  UPDATE users SET coins = coins - p_coin_cost WHERE id = p_sender_id;
+
+  -- Add to companion wallet_balance
+  UPDATE users SET wallet_balance = wallet_balance + v_companion_share WHERE id = p_receiver_id;
+
+  -- Create gift transaction
+  INSERT INTO gift_transactions (
+    sender_id, receiver_id, conversation_id, gift_item_id,
+    coin_cost, companion_share, platform_share, split_percent, personal_message
+  ) VALUES (
+    p_sender_id, p_receiver_id, p_conversation_id, p_gift_item_id,
+    p_coin_cost, v_companion_share, v_platform_share, p_split_percent, p_personal_message
+  ) RETURNING id INTO v_gift_tx_id;
+
+  -- Create message
+  INSERT INTO messages (
+    conversation_id, sender_id, content, message_type, gift_transaction_id
+  ) VALUES (
+    p_conversation_id, p_sender_id,
+    COALESCE(p_personal_message, 'Sent a gift!'),
+    'gift', v_gift_tx_id
+  ) RETURNING id INTO v_message_id;
+
+  -- Update gift_transaction with message_id
+  UPDATE gift_transactions SET message_id = v_message_id WHERE id = v_gift_tx_id;
+
+  -- Update conversation last message
+  UPDATE conversations SET
+    last_message_at = NOW(),
+    updated_at = NOW()
+  WHERE id = p_conversation_id;
+
+  -- Log coin transactions for audit
+  INSERT INTO coin_transactions (user_id, type, amount, description, related_user_id)
+  VALUES
+    (p_sender_id, 'gift_sent', p_coin_cost, 'Gift sent', p_receiver_id),
+    (p_receiver_id, 'gift_received', v_companion_share, 'Gift received', p_sender_id);
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'gift_transaction_id', v_gift_tx_id,
+    'message_id', v_message_id
+  );
+END;
+$$ LANGUAGE plpgsql;
+
+-- ───────────────────────────────────────────────────────────────────────────
 -- 10. REFERRALS
 -- ───────────────────────────────────────────────────────────────────────────
 CREATE TABLE referrals (
@@ -453,6 +605,13 @@ CREATE POLICY "Users can create requests" ON custom_requests
 CREATE POLICY "Companions can update request status" ON custom_requests
   FOR UPDATE USING (companion_id = (SELECT id FROM users WHERE clerk_id = auth.uid()::text));
 
+-- Update platform_settings with gift split config
+UPDATE platform_settings SET value = '50', description = 'Platform commission percentage on gifts (companion gets remainder)' WHERE key = 'platform_gift_commission';
+INSERT INTO platform_settings (key, value, description) VALUES
+  ('gift_min_coins', '10', 'Minimum coins required to send a gift'),
+  ('gifts_enabled', 'true', 'Enable/disable gifting system globally')
+ON CONFLICT (key) DO NOTHING;
+
 -- ───────────────────────────────────────────────────────────────────────────
 -- FUNCTIONS
 -- ───────────────────────────────────────────────────────────────────────────
@@ -516,12 +675,18 @@ CREATE INDEX idx_conversations_client_id ON conversations(client_id);
 CREATE INDEX idx_conversations_companion_id ON conversations(companion_id);
 CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
 CREATE INDEX idx_messages_sender_id ON messages(sender_id);
+CREATE INDEX idx_messages_gift_transaction_id ON messages(gift_transaction_id);
 CREATE INDEX idx_coin_transactions_user_id ON coin_transactions(user_id);
 CREATE INDEX idx_payment_transactions_user_id ON payment_transactions(user_id);
 CREATE INDEX idx_withdrawal_requests_user_id ON withdrawal_requests(user_id);
 CREATE INDEX idx_withdrawal_requests_status ON withdrawal_requests(status);
 CREATE INDEX idx_gifts_sender_id ON gifts(sender_id);
 CREATE INDEX idx_gifts_receiver_id ON gifts(receiver_id);
+CREATE INDEX idx_gift_transactions_sender ON gift_transactions(sender_id);
+CREATE INDEX idx_gift_transactions_receiver ON gift_transactions(receiver_id);
+CREATE INDEX idx_gift_transactions_conversation ON gift_transactions(conversation_id);
+CREATE INDEX idx_gift_transactions_created ON gift_transactions(created_at);
+CREATE INDEX idx_gift_items_category ON gift_items(category);
 CREATE INDEX idx_favorites_client_id ON favorites(client_id);
 CREATE INDEX idx_blog_posts_slug ON blog_posts(slug);
 CREATE INDEX idx_blog_posts_status ON blog_posts(status);

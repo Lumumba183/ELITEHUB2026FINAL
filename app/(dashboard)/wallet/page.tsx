@@ -10,6 +10,7 @@ import {
   History,
   TrendingUp,
   Shield,
+  Gift,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -38,6 +39,8 @@ export default function WalletPage() {
   const [coins, setCoins] = useState(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [giftEarnings, setGiftEarnings] = useState(0);
+  const [giftTransactions, setGiftTransactions] = useState<any[]>([]);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawMethod, setWithdrawMethod] = useState("bank");
   const [withdrawDetails, setWithdrawDetails] = useState("");
@@ -56,8 +59,23 @@ export default function WalletPage() {
       setBalance(dbUser.wallet_balance || 0);
       setCoins(dbUser.coins || 0);
       fetchTransactions();
+      if (dbUser.role === "companion") {
+        fetchGiftEarnings();
+      }
     }
   }, [dbUser]);
+
+  async function fetchGiftEarnings() {
+    const { data } = await supabase
+      .from("gift_transactions")
+      .select("coin_cost, companion_share, created_at, gift_item:gift_item_id(name, icon)")
+      .eq("receiver_id", dbUser?.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    const total = data?.reduce((sum, tx) => sum + (tx.companion_share || 0), 0) || 0;
+    setGiftEarnings(total);
+    setGiftTransactions(data || []);
+  }
 
   async function fetchTransactions() {
     const { data } = await supabase
@@ -66,7 +84,6 @@ export default function WalletPage() {
       .eq("user_id", dbUser?.id)
       .order("created_at", { ascending: false })
       .limit(50);
-
     setTransactions(data || []);
     setLoading(false);
   }
@@ -105,9 +122,10 @@ export default function WalletPage() {
   async function purchaseCoins(packageId: string) {
     const pkg = packages.find((p) => p.id === packageId);
     if (!pkg) return;
-
     toast.info(`Purchase ${pkg.coins} coins for KES ${pkg.price} - Redirecting to PesaPal...`);
   }
+
+  const isCompanion = dbUser?.role === "companion";
 
   return (
     <div className="space-y-6">
@@ -116,7 +134,7 @@ export default function WalletPage() {
         <p className="text-[#A09B8C]">Manage your balance, coins, and transactions</p>
       </div>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className={`grid gap-6 ${isCompanion ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-2 lg:grid-cols-3"}`}>
         <div className="glass rounded-2xl p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="w-10 h-10 rounded-xl bg-[#E11D48]/10 flex items-center justify-center">
@@ -139,6 +157,19 @@ export default function WalletPage() {
           <p className="text-sm text-[#A09B8C] mt-1">Available for messaging</p>
         </div>
 
+        {isCompanion && (
+          <div className="glass rounded-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="w-10 h-10 rounded-xl bg-[#E11D48]/10 flex items-center justify-center">
+                <Gift className="w-5 h-5 text-[#E11D48]" />
+              </div>
+              <span className="text-xs text-[#A09B8C]">Gift Earnings</span>
+            </div>
+            <p className="text-3xl font-bold">{formatCurrency(giftEarnings)}</p>
+            <p className="text-sm text-[#A09B8C] mt-1">From gifts received</p>
+          </div>
+        )}
+
         <div className="glass rounded-2xl p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="w-10 h-10 rounded-xl bg-[#E11D48]/10 flex items-center justify-center">
@@ -156,8 +187,9 @@ export default function WalletPage() {
           { id: "overview", label: "Overview", icon: TrendingUp },
           { id: "buy", label: "Buy Coins", icon: Plus },
           { id: "withdraw", label: "Withdraw", icon: ArrowUpRight },
+          isCompanion ? { id: "gifts", label: "Gift Earnings", icon: Gift } : null,
           { id: "history", label: "History", icon: History },
-        ].map((tab) => (
+        ].filter(Boolean).map((tab: any) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -275,6 +307,47 @@ export default function WalletPage() {
           </div>
         )}
 
+        {activeTab === "gifts" && isCompanion && (
+          <div className="space-y-6">
+            <h3 className="font-semibold text-lg">Gift Earnings</h3>
+            <div className="glass rounded-xl p-6 mb-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-[#A09B8C] mb-1">Total Gift Earnings</p>
+                  <p className="text-4xl font-bold text-[#E11D48]">{formatCurrency(giftEarnings)}</p>
+                </div>
+                <div className="w-16 h-16 rounded-2xl bg-[#E11D48]/10 flex items-center justify-center">
+                  <Gift className="w-8 h-8 text-[#E11D48]" />
+                </div>
+              </div>
+            </div>
+            <h4 className="font-medium text-sm text-[#A09B8C] uppercase tracking-wider">Recent Gifts</h4>
+            <div className="space-y-3">
+              {giftTransactions.length > 0 ? (
+                giftTransactions.map((tx, i) => (
+                  <div key={i} className="flex items-center justify-between p-4 rounded-xl hover:bg-white/5 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-[#E11D48]/10 flex items-center justify-center text-xl">
+                        {tx.gift_item?.icon || "🎁"}
+                      </div>
+                      <div>
+                        <p className="font-medium">{tx.gift_item?.name || "Gift"}</p>
+                        <p className="text-sm text-[#A09B8C]">{formatDate(tx.created_at)}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-green-400">+{tx.companion_share} coins</p>
+                      <p className="text-xs text-[#A09B8C]">of {tx.coin_cost} total</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-center text-[#A09B8C] py-8">No gifts received yet</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeTab === "history" && (
           <div className="space-y-6">
             <h3 className="font-semibold text-lg">Transaction History</h3>
@@ -284,24 +357,30 @@ export default function WalletPage() {
                   <div key={tx.id} className="flex items-center justify-between p-4 rounded-xl hover:bg-white/5 transition-colors">
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                        tx.type === "purchase" || tx.type === "gift_received"
+                        tx.type === "purchase" || tx.type === "gift_received" || tx.type === "refund"
                           ? "bg-green-500/10"
                           : "bg-[#E11D48]/10"
                       }`}>
-                        <ArrowDownLeft className="w-5 h-5 text-[#E11D48]" />
+                        {tx.type === "gift_sent" ? (
+                          <Gift className="w-5 h-5 text-[#E11D48]" />
+                        ) : (
+                          <ArrowDownLeft className="w-5 h-5 text-[#E11D48]" />
+                        )}
                       </div>
                       <div>
-                        <p className="font-medium capitalize">{tx.type}</p>
+                        <p className="font-medium capitalize">
+                          {tx.type === "gift_sent" ? "Gift Sent" : tx.type === "gift_received" ? "Gift Received" : tx.type}
+                        </p>
                         <p className="text-sm text-[#A09B8C]">{tx.description || "-"}</p>
                       </div>
                     </div>
                     <div className="text-right">
                       <p className={`font-semibold ${
-                        tx.type === "purchase" || tx.type === "gift_received"
+                        tx.type === "purchase" || tx.type === "gift_received" || tx.type === "refund"
                           ? "text-green-400"
                           : "text-[#E11D48]"
                       }`}>
-                        {tx.type === "purchase" || tx.type === "gift_received" ? "+" : "-"}{tx.amount}
+                        {tx.type === "purchase" || tx.type === "gift_received" || tx.type === "refund" ? "+" : "-"}{tx.amount}
                       </p>
                       <p className="text-xs text-[#A09B8C]">{formatDate(tx.created_at)}</p>
                     </div>

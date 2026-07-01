@@ -50,7 +50,31 @@ export const withdrawalSchema = z.object({
   payment_details: z.string().min(5, "Payment details required"),
 });
 
-// Gift Validation
+// Send Gift Validation (NEW Gifting System)
+export const sendGiftSchema = z.object({
+  conversation_id: z.string().uuid("Invalid conversation ID"),
+  gift_item_id: z.string().uuid("Invalid gift item ID"),
+  personal_message: z.string().max(200, "Message too long").optional(),
+});
+
+// Gift Item Management Validation (Admin)
+export const giftItemSchema = z.object({
+  name: z.string().min(1, "Name is required").max(50),
+  icon: z.string().min(1, "Icon is required").max(10),
+  coin_cost: z.number().int().min(1, "Cost must be at least 1 coin"),
+  sort_order: z.number().int().min(0).default(0),
+  is_active: z.boolean().default(true),
+  category: z.enum(["standard", "premium", "luxury"]).default("standard"),
+});
+
+// Gift Settings Validation (Admin)
+export const giftSettingsSchema = z.object({
+  split_percent: z.number().int().min(0).max(100),
+  gifts_enabled: z.boolean(),
+  gift_min_coins: z.number().int().min(1),
+});
+
+// Old Gift Validation (kept for backwards compatibility)
 export const giftSchema = z.object({
   receiver_id: z.string().uuid(),
   amount: z.number().min(10, "Minimum gift is 10 KES"),

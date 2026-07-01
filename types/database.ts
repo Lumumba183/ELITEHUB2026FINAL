@@ -65,6 +65,36 @@ export interface Conversation {
   unread_count?: number
 }
 
+export interface GiftItem {
+  id: string
+  name: string
+  icon: string
+  coin_cost: number
+  sort_order: number
+  is_active: boolean
+  category: 'standard' | 'premium' | 'luxury'
+  created_at: string
+  updated_at: string
+}
+
+export interface GiftTransaction {
+  id: string
+  sender_id: string
+  receiver_id: string
+  conversation_id: string | null
+  gift_item_id: string | null
+  coin_cost: number
+  companion_share: number
+  platform_share: number
+  split_percent: number
+  message_id: string | null
+  personal_message: string | null
+  created_at: string
+  sender?: User
+  receiver?: User
+  gift_item?: GiftItem
+}
+
 export interface Message {
   id: string
   conversation_id: string
@@ -72,7 +102,10 @@ export interface Message {
   content: string
   is_read: boolean
   created_at: string
+  gift_transaction_id?: string | null
+  message_type?: 'text' | 'gift' | 'image' | 'system'
   sender?: User
+  gift_transaction?: GiftTransaction
 }
 
 export interface BlockedUser {

@@ -3,16 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import {
-  Send,
-  ArrowLeft,
-  MoreVertical,
-  Phone,
-  Video,
-  Image as ImageIcon,
-  Smile,
-  Loader2,
-} from "lucide-react";
+import { Gift, Send, ArrowLeft, MoreVertical, Phone, Video, Image as ImageIcon, Smile, Loader2 } from "lucide-react";
+import GiftPicker from "@/components/gifts/GiftPicker";
+import GiftMessage from "@/components/gifts/GiftMessage";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { formatDate } from "@/lib/utils";
@@ -37,6 +30,18 @@ interface Message {
   content: string;
   is_read: boolean;
   created_at: string;
+  gift_transaction_id?: string | null;
+  message_type?: "text" | "gift" | "image" | "system";
+  gift_transaction?: {
+    id: string;
+    coin_cost: number;
+    companion_share: number;
+    gift_item?: {
+      name: string;
+      icon: string;
+    };
+    personal_message?: string;
+  };
 }
 
 export default function MessagesPage() {
@@ -50,13 +55,17 @@ export default function MessagesPage() {
   const [messageInput, setMessageInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [showGiftPicker, setShowGiftPicker] = useState(false);
+  const [userCoins, setUserCoins] = useState(0);
   const { user, dbUser } = useAuth();
   const supabase = createClient();
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (user && dbUser) {
       fetchConversations();
+      setUserCoins(dbUser.coins || 0);
     }
   }, [user, dbUser]);
 
@@ -100,7 +109,13 @@ export default function MessagesPage() {
   async function fetchMessages(conversationId: string) {
     const { data } = await supabase
       .from("messages")
-      .select("*")
+      .select(`
+        *,
+        gift_transaction:gift_transaction_id(
+          id, coin_cost, companion_share, personal_message,
+          gift_item:gift_item_id(name, icon)
+        )
+      `)
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true });
 
@@ -265,6 +280,24 @@ export default function MessagesPage() {
           <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
             {messages.map((msg) => {
               const isMe = msg.sender_id === dbUser?.id;
+              const isGift = msg.message_type === "gift" || msg.gift_transaction_id;
+
+              if (isGift && msg.gift_transaction) {
+                return (
+                  <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+                    <GiftMessage
+                      giftName={msg.gift_transaction.gift_item?.name || "Gift"}
+                      giftIcon={msg.gift_transaction.gift_item?.icon || "🎁"}
+                      coinCost={msg.gift_transaction.coin_cost}
+                      personalMessage={msg.gift_transaction.personal_message || msg.content}
+                      isSender={isMe}
+                      createdAt={msg.created_at}
+                      companionShare={msg.gift_transaction.companion_share}
+                    />
+                  </div>
+                );
+              }
+
               return (
                 <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
                   <div
@@ -285,10 +318,39 @@ export default function MessagesPage() {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Gift Picker Modal */}
+          <GiftPicker
+            isOpen={showGiftPicker}
+            onClose={() => setShowGiftPicker(false)}
+            conversationId={selectedConversation.id}
+            onGiftSent={() => {
+              fetchMessages(selectedConversation.id);
+              fetchConversations();
+              setUserCoins((prev) => prev - (selectedConversation?.last_message ? 0 : 0)); // Will refresh from DB
+              // Refresh user coins
+              supabase
+                .from("users")
+                .select("coins")
+                .eq("id", dbUser?.id)
+                .single()
+                .then(({ data }) => {
+                  if (data) setUserCoins(data.coins || 0);
+                });
+            }}
+            userCoins={userCoins}
+          />
+
           <div className="p-4 border-t border-white/10">
             <div className="flex items-center gap-3">
               <button className="p-2 hover:bg-white/5 rounded-lg">
                 <ImageIcon className="w-5 h-5 text-[#A09B8C]" />
+              </button>
+              <button
+                onClick={() => setShowGiftPicker(true)}
+                className="p-2 hover:bg-white/5 rounded-lg"
+                title="Send a gift"
+              >
+                <Gift className="w-5 h-5 text-[#E11D48]" />
               </button>
               <button className="p-2 hover:bg-white/5 rounded-lg">
                 <Smile className="w-5 h-5 text-[#A09B8C]" />

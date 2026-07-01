@@ -16,6 +16,8 @@ import {
   Crown,
   Shield,
   AlertTriangle,
+  Gift,
+  Settings,
 } from "lucide-react";
 
 export default async function AdminPage() {
@@ -71,6 +73,44 @@ export default async function AdminPage() {
     .order("created_at", { ascending: false })
     .limit(10);
 
+  const { data: giftStats } = await supabase
+    .from("gift_transactions")
+    .select("coin_cost, companion_share, platform_share");
+
+  const giftVolume = giftStats?.reduce((sum, t) => sum + (t.coin_cost || 0), 0) || 0;
+  const giftPlatformRevenue = giftStats?.reduce((sum, t) => sum + (t.platform_share || 0), 0) || 0;
+
+  const { data: topGifts } = await supabase
+    .from("gift_transactions")
+    .select("gift_item_id, gift_item:gift_item_id(name, icon), coin_cost")
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  // Aggregate top gifts
+  const giftCounts = (topGifts || []).reduce((acc, tx) => {
+    const name = tx.gift_item?.name || "Unknown";
+    const icon = tx.gift_item?.icon || "🎁";
+    if (!acc[name]) acc[name] = { name, icon, count: 0, total: 0 };
+    acc[name].count += 1;
+    acc[name].total += tx.coin_cost || 0;
+    return acc;
+  }, {} as Record<string, any>);
+
+  const sortedTopGifts = Object.values(giftCounts)
+    .sort((a: any, b: any) => b.total - a.total)
+    .slice(0, 5);
+
+  const { data: recentGiftTransactions } = await supabase
+    .from("gift_transactions")
+    .select(`
+      *,
+      gift_item:gift_item_id(name, icon),
+      sender:sender_id(display_name),
+      receiver:receiver_id(display_name)
+    `)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
   return (
     <div className="space-y-8">
       <div className="flex items-center gap-3">
@@ -123,6 +163,115 @@ export default async function AdminPage() {
             <span className="text-xs text-[#A09B8C]">Revenue</span>
           </div>
           <p className="text-3xl font-bold">{formatCurrency(totalRevenue)}</p>
+        </div>
+
+        <div className="glass rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
+              <Gift className="w-5 h-5 text-purple-400" />
+            </div>
+            <span className="text-xs text-[#A09B8C]">Gift Revenue</span>
+          </div>
+          <p className="text-3xl font-bold">{formatCurrency(giftPlatformRevenue)}</p>
+          <p className="text-xs text-[#A09B8C] mt-1">{giftStats?.length || 0} transactions</p>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Gift Analytics */}
+        <div className="glass rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="font-semibold text-lg flex items-center gap-2">
+              <Gift className="w-5 h-5 text-purple-400" />
+              Gift Analytics
+            </h2>
+            <Link
+              href="/admin/gifts"
+              className="text-sm text-[#E11D48] hover:text-[#E11D48]/80 flex items-center gap-1"
+            >
+              <Settings className="w-4 h-4" />
+              Manage Gifts
+            </Link>
+          </div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div className="p-4 rounded-xl bg-white/5 text-center">
+                <p className="text-xs text-[#A09B8C] mb-1">Gift Volume</p>
+                <p className="text-xl font-bold">{giftVolume}</p>
+                <p className="text-xs text-[#A09B8C]">coins</p>
+              </div>
+              <div className="p-4 rounded-xl bg-white/5 text-center">
+                <p className="text-xs text-[#A09B8C] mb-1">Companion</p>
+                <p className="text-xl font-bold text-green-400">{giftVolume - giftPlatformRevenue}</p>
+                <p className="text-xs text-[#A09B8C]">coins</p>
+              </div>
+              <div className="p-4 rounded-xl bg-white/5 text-center">
+                <p className="text-xs text-[#A09B8C] mb-1">Platform</p>
+                <p className="text-xl font-bold text-[#E11D48]">{giftPlatformRevenue}</p>
+                <p className="text-xs text-[#A09B8C]">coins</p>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-medium text-[#A09B8C] mb-3">Top Gifts</h3>
+              <div className="space-y-2">
+                {sortedTopGifts.length > 0 ? (
+                  sortedTopGifts.map((gift: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">{gift.icon}</span>
+                        <span className="font-medium">{gift.name}</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold">{gift.count} sent</p>
+                        <p className="text-xs text-[#A09B8C]">{gift.total} coins</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-center text-[#A09B8C] py-4">No gift data yet</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Recent Gift Transactions */}
+        <div className="glass rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="font-semibold text-lg flex items-center gap-2">
+              <Gift className="w-5 h-5 text-purple-400" />
+              Recent Gift Transactions
+            </h2>
+          </div>
+          <div className="space-y-3">
+            {recentGiftTransactions && recentGiftTransactions.length > 0 ? (
+              recentGiftTransactions.map((tx: any) => (
+                <div
+                  key={tx.id}
+                  className="flex items-center justify-between p-4 rounded-xl glass hover:bg-white/10 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center text-xl">
+                      {tx.gift_item?.icon || "🎁"}
+                    </div>
+                    <div>
+                      <p className="font-semibold">{tx.gift_item?.name || "Gift"}</p>
+                      <p className="text-sm text-[#A09B8C]">
+                        {tx.sender?.display_name || "Unknown"} → {tx.receiver?.display_name || "Unknown"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold">{tx.coin_cost} coins</p>
+                    <p className="text-xs text-[#A09B8C]">{formatDate(tx.created_at)}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-center text-[#A09B8C] py-8">No gift transactions yet</p>
+            )}
+          </div>
         </div>
       </div>
 
